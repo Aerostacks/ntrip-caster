@@ -1,0 +1,14 @@
+services:
+  ntrip-caster:
+    build: .
+    container_name: ntrip-caster
+    restart: unless-stopped
+    ports:
+      - "2101:2101"
+    environment:
+      - NTRIP_HOST=0.0.0.0
+      - NTRIP_PORT=2101
+      - MOUNTPOINT_CONFIG=/app/config/mountpoints.json
+      - LOG_LEVEL=INFO
+    volumes:
+      - ./config:/app/config:ro
