@@ -1,0 +1,49 @@
+remote: r2d2@r2d2
+
+commands:
+  start:
+    help: Start ntrip-caster on remote
+    aliases: [up]
+    steps:
+      - run: cd ~/unified && docker compose -f docker-compose.infra.yml up -d ntrip-caster
+        remote: true
+
+  stop:
+    help: Stop ntrip-caster on remote
+    aliases: [down]
+    steps:
+      - run: cd ~/unified && docker compose -f docker-compose.infra.yml stop ntrip-caster
+        remote: true
+
+  update:
+    help: Pull latest image on remote
+    aliases: [u]
+    steps:
+      - run: docker pull ghcr.io/aerostacks/ntrip-caster:{branch}
+        remote: true
+
+  build:
+    help: Publish local project to remote registry
+    aliases: [b]
+    steps:
+      - run: bash docker-build.sh {branch}
+      - run: git push
+
+  deploy:
+    help: Publish and deploy to remote server
+    aliases: [d]
+    steps:
+      - run: "@build"
+      - run: "@stop"
+        ignore_errors: true
+      - run: "@update"
+      - run: "@start"
+
+  setup:
+    help: First-time setup of this repo
+    steps:
+      - run: "@update"
+        ignore_errors: true
+      - run: docker buildx inspect ntrip-caster-builder >/dev/null 2>&1 || docker buildx create --name ntrip-caster-builder --driver docker-container --use
+      - run: docker buildx use ntrip-caster-builder
+      - run: docker buildx inspect --bootstrap
