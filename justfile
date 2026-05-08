@@ -1,4 +1,5 @@
 # ntrip-caster
+set windows-shell := ["bash", "-cu"]
 
 remote := "r2d2@r2d2"
 branch := `git rev-parse --abbrev-ref HEAD`
