@@ -40,6 +40,9 @@ alias d := deploy
 # First-time setup of this repo
 setup:
     -ssh {{remote}} "docker pull ghcr.io/aerostacks/ntrip-caster:{{branch}}"
-    -docker buildx inspect ntrip-caster-builder >/dev/null 2>&1 || docker buildx create --name ntrip-caster-builder --driver docker-container --use
-    docker buildx use ntrip-caster-builder
+    -docker buildx rm aerostacks
+    docker buildx create --name aerostacks --driver docker-container
+    docker buildx create --name aerostacks --append --node amd64 --platform linux/amd64 ssh://r2d2@r2d2
+    docker buildx create --name aerostacks --append --node arm64 --platform linux/arm64 ssh://avalanche@avalanche
+    docker buildx use aerostacks
     docker buildx inspect --bootstrap
