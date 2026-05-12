@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import contextlib
 import json
 import logging
 import os
@@ -9,7 +10,6 @@ import socketserver
 import threading
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 logger = logging.getLogger("ntrip_caster")
 
@@ -35,10 +35,8 @@ class MountpointState:
     def set_source(self, sock: socket.socket) -> None:
         with self.lock:
             if self.source is not None and self.source is not sock:
-                try:
+                with contextlib.suppress(OSError):
                     self.source.close()
-                except OSError:
-                    pass
             self.source = sock
 
     def clear_source(self, sock: socket.socket) -> None:
@@ -67,10 +65,8 @@ class MountpointState:
             with self.lock:
                 for client in dead:
                     self.clients.discard(client)
-                    try:
+                    with contextlib.suppress(OSError):
                         client.close()
-                    except OSError:
-                        pass
 
 
 class MountpointRegistry:
@@ -89,9 +85,12 @@ class MountpointRegistry:
     def sourcetable(self) -> str:
         lines = []
         for name in sorted(self._mountpoints):
-            lines.append(
-                f"STR;{name};{name};RTCM 3;1004(1),1005(10),1077(1),1087(1);2;GPS+GLO;NONE;0;0;Anchor;0;0;N;N;0;"
+            str_line = (
+                f"STR;{name};{name};RTCM 3;"
+                f"1004(1),1005(10),1077(1),1087(1);"
+                f"2;GPS+GLO;NONE;0;0;Anchor;0;0;N;N;0;"
             )
+            lines.append(str_line)
         lines.append("ENDSOURCETABLE")
         return "\r\n".join(lines) + "\r\n"
 
@@ -111,12 +110,17 @@ def load_mountpoints(config_path: Path) -> dict[str, MountpointConfig]:
         client_username = entry.get("client_username")
         client_password = entry.get("client_password")
         if client_username is not None and not isinstance(client_username, str):
-            raise ValueError(f"Mountpoint {mount_name!r} client_username must be a string")
+            raise ValueError(
+                f"Mountpoint {mount_name!r} client_username must be a string"
+            )
         if client_password is not None and not isinstance(client_password, str):
-            raise ValueError(f"Mountpoint {mount_name!r} client_password must be a string")
+            raise ValueError(
+                f"Mountpoint {mount_name!r} client_password must be a string"
+            )
         if (client_username is None) != (client_password is None):
             raise ValueError(
-                f"Mountpoint {mount_name!r} must set both client_username and client_password or neither"
+                f"Mountpoint {mount_name!r} must set both"
+                f" client_username and client_password or neither"
             )
         mountpoints[mount_name] = MountpointConfig(
             source_password=source_password,
@@ -167,10 +171,8 @@ class NtripHandler(socketserver.BaseRequestHandler):
             return
         except Exception:
             logger.exception("Failed to handle connection from %s", self.client_address)
-            try:
+            with contextlib.suppress(OSError):
                 self.request.sendall(b"HTTP/1.1 500 Internal Server Error\r\n\r\n")
-            except OSError:
-                pass
 
     def _read_handshake(self) -> tuple[str, dict[str, str]]:
         data = b""
@@ -205,7 +207,11 @@ class NtripHandler(socketserver.BaseRequestHandler):
 
         state.set_source(self.request)
         self.request.sendall(b"ICY 200 OK\r\n\r\n")
-        logger.info("Source connected for mountpoint %s from %s", mount_name, self.client_address)
+        logger.info(
+            "Source connected for mountpoint %s from %s",
+            mount_name,
+            self.client_address,
+        )
         try:
             while True:
                 chunk = self.request.recv(4096)
@@ -239,13 +245,18 @@ class NtripHandler(socketserver.BaseRequestHandler):
             provided = parse_basic_auth(headers.get("authorization"))
             if provided != (state.config.client_username, state.config.client_password):
                 self.request.sendall(
-                    b"HTTP/1.1 401 Unauthorized\r\nWWW-Authenticate: Basic realm=\"NTRIP\"\r\n\r\n"
+                    b"HTTP/1.1 401 Unauthorized\r\n"
+                    b'WWW-Authenticate: Basic realm="NTRIP"\r\n\r\n'
                 )
                 return
 
         state.add_client(self.request)
         self.request.sendall(b"ICY 200 OK\r\n\r\n")
-        logger.info("Client connected for mountpoint %s from %s", mount_name, self.client_address)
+        logger.info(
+            "Client connected for mountpoint %s from %s",
+            mount_name,
+            self.client_address,
+        )
         try:
             while True:
                 chunk = self.request.recv(1)
@@ -268,13 +279,18 @@ def main() -> None:
     )
     host = os.environ.get("NTRIP_HOST", "0.0.0.0")
     port = int(os.environ.get("NTRIP_PORT", "2101"))
-    config_path = Path(os.environ.get("MOUNTPOINT_CONFIG", "/app/config/mountpoints.json"))
+    config_path = Path(
+        os.environ.get("MOUNTPOINT_CONFIG", "/app/config/mountpoints.json")
+    )
     registry = MountpointRegistry(load_mountpoints(config_path))
     NtripHandler.registry = registry
 
     with ThreadedTCPServer((host, port), NtripHandler) as server:
         logger.info("NTRIP caster listening on %s:%s", host, port)
-        logger.info("Configured mountpoints: %s", ", ".join(sorted(load_mountpoints(config_path))))
+        logger.info(
+            "Configured mountpoints: %s",
+            ", ".join(sorted(load_mountpoints(config_path))),
+        )
         server.serve_forever()
 
 

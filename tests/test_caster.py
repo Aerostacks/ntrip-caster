@@ -1,4 +1,5 @@
 """Tests for the NTRIP caster."""
+
 from __future__ import annotations
 
 import base64
