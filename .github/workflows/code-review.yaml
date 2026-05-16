@@ -1,0 +1,111 @@
+name: Local Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  review:
+    runs-on: avalanche
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get PR metadata
+        id: meta
+        run: |
+          echo "base=${{ github.event.pull_request.base.ref }}" >> $GITHUB_OUTPUT
+          echo "files=$(git diff --name-only origin/${{ github.event.pull_request.base.ref }}...HEAD | tr '\n' ' ')" >> $GITHUB_OUTPUT
+          echo "lines=$(git diff origin/${{ github.event.pull_request.base.ref }}...HEAD | wc -l)" >> $GITHUB_OUTPUT
+          git diff origin/${{ github.event.pull_request.base.ref }}...HEAD > ${{ runner.temp }}/pr-diff.txt
+
+      - name: Setup Node.js
+        if: steps.meta.outputs.lines != '0'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install pi
+        if: steps.meta.outputs.lines != '0'
+        run: npm install -g @earendil-works/pi-coding-agent
+
+      - name: Configure pi for local ollama
+        if: steps.meta.outputs.lines != '0'
+        run: |
+          mkdir -p ~/.pi/agent
+          cp "${{ github.workspace }}/.github/local-check/models.json" ~/.pi/agent/models.json
+
+      - name: Prepare review prompt
+        if: steps.meta.outputs.lines != '0'
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_BASE: ${{ steps.meta.outputs.base }}
+          PR_FILES: ${{ steps.meta.outputs.files }}
+        run: |
+          cat > ${{ runner.temp }}/review-prompt.txt << 'PROMPT_EOF'
+          You are reviewing a pull request in this repository. You have full access to read any file in the repo.
+          PROMPT_EOF
+
+          cat >> ${{ runner.temp }}/review-prompt.txt << EOF
+
+          PR Title: ${PR_TITLE}
+          PR Description: ${PR_BODY:-No description provided}
+          Base branch: ${PR_BASE}
+          Changed files: ${PR_FILES}
+
+          The diff is at: ${{ runner.temp }}/pr-diff.txt
+
+          Instructions:
+          1. Read the diff file to understand what changed
+          2. Read the relevant source files to understand the surrounding context, architecture, and conventions
+          3. Check if tests exist for the changed code and whether they need updating
+          4. Look at related files (imports, callers, configs) to catch integration issues
+          5. Produce your final review
+
+          Be thorough but concise. Focus on real issues, not style nitpicks.
+          EOF
+
+      - name: Run agentic code review
+        if: steps.meta.outputs.lines != '0'
+        run: |
+          SYSTEM_PROMPT=$(cat "${{ github.workspace }}/.github/local-check/SYSTEM_PROMPT.md")
+          PROMPT=$(cat ${{ runner.temp }}/review-prompt.txt)
+
+          pi --provider ollama \
+            --model "qwen3:30b-a3b" \
+            --system-prompt "$SYSTEM_PROMPT" \
+            --no-session \
+            --print \
+            "$PROMPT" \
+            > ${{ runner.temp }}/review-output.md 2>/dev/null || true
+
+      - name: Post review comment
+        if: steps.meta.outputs.lines != '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          REVIEW_FILE="${{ runner.temp }}/review-output.md"
+          if [ -s "$REVIEW_FILE" ]; then
+            {
+              echo "## 🤖 Local Code Review (Agentic)"
+              echo ""
+              cat "$REVIEW_FILE"
+              echo ""
+              echo "---"
+              echo "*Automated review by [local-check](https://github.com/Aerostacks/local-check) — pi + Qwen3-30B on DGX Spark (agentic mode)*"
+            } > ${{ runner.temp }}/comment.md
+
+            gh pr comment ${{ github.event.pull_request.number }} \
+              --body-file ${{ runner.temp }}/comment.md \
+              --repo ${{ github.repository }}
+          else
+            echo "No review output generated, skipping comment"
+          fi
