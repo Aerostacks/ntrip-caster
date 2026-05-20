@@ -67,6 +67,12 @@ format:
 
 alias f := format
 
+# Run CI checks locally (lint + tests)
+ci:
+    ruff format --check .
+    ruff check .
+    pytest tests/
+
 # Prune stale branches (>1w inactive, no open PR) in this repo
 [no-cd]
 prune-branches:
