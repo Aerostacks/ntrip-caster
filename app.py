@@ -282,15 +282,13 @@ def main() -> None:
     config_path = Path(
         os.environ.get("MOUNTPOINT_CONFIG", "/app/config/mountpoints.json")
     )
-    registry = MountpointRegistry(load_mountpoints(config_path))
+    mountpoints = load_mountpoints(config_path)
+    registry = MountpointRegistry(mountpoints)
     NtripHandler.registry = registry
 
     with ThreadedTCPServer((host, port), NtripHandler) as server:
         logger.info("NTRIP caster listening on %s:%s", host, port)
-        logger.info(
-            "Configured mountpoints: %s",
-            ", ".join(sorted(load_mountpoints(config_path))),
-        )
+        logger.info("Configured mountpoints: %s", ", ".join(sorted(mountpoints)))
         server.serve_forever()
 
 
