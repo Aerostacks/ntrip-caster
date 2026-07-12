@@ -69,5 +69,7 @@ jobs:
       - name: Deploy
         run: |
           docker pull ${IMAGE}:main
-          cd /home/r2d2/unified
-          docker compose -f docker-compose.infra.yml up -d ntrip-caster
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+            -v /home/r2d2/unified:/home/r2d2/unified \
+            -w /home/r2d2/unified docker:cli \
+            compose -f docker-compose.infra.yml up -d ntrip-caster
