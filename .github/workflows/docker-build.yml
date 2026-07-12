@@ -18,12 +18,10 @@ jobs:
       matrix:
         include:
           - runner: r2d2
-            arch: X64
             platform: linux/amd64
           - runner: avalanche
-            arch: ARM64
             platform: linux/arm64
-    runs-on: [self-hosted, "${{ matrix.arch }}", "${{ matrix.runner }}"]
+    runs-on: [self-hosted, "${{ matrix.runner }}"]
     steps:
       - uses: actions/checkout@v4
 
