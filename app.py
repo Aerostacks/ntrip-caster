@@ -8,8 +8,11 @@ import os
 import socket
 import socketserver
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Annotated, Literal
+
+from aero_config import Service, live
 
 logger = logging.getLogger("ntrip_caster")
 
@@ -272,9 +275,31 @@ class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
     daemon_threads = True
 
 
+@dataclass(frozen=True)
+class LoggingSettings:
+    level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] | None = None
+
+
+@dataclass(frozen=True)
+class CasterSettings:
+    logging: Annotated[LoggingSettings, live(title="Logging")] = field(
+        default_factory=LoggingSettings
+    )
+
+
+config = Service(
+    "ntrip-caster",
+    CasterSettings,
+    instance=os.getenv("AERO_CONFIG_INSTANCE") or "default",
+    url=os.getenv("AERO_CONFIG_URL") or None,
+    cache_dir=os.getenv("AERO_CONFIG_CACHE_DIR") or None,
+)
+
+
 def main() -> None:
+    inherited_level = os.getenv("LOG_LEVEL", "INFO").upper()
     logging.basicConfig(
-        level=os.environ.get("LOG_LEVEL", "INFO").upper(),
+        level=config.load().logging.level or inherited_level,
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
     host = os.environ.get("NTRIP_HOST", "0.0.0.0")
@@ -289,7 +314,15 @@ def main() -> None:
     with ThreadedTCPServer((host, port), NtripHandler) as server:
         logger.info("NTRIP caster listening on %s:%s", host, port)
         logger.info("Configured mountpoints: %s", ", ".join(sorted(mountpoints)))
-        server.serve_forever()
+        config.on_change(
+            lambda c: c.logging.level,
+            lambda level: logging.getLogger().setLevel(level or inherited_level),
+        )
+        config.start()
+        try:
+            server.serve_forever()
+        finally:
+            config.stop()
 
 
 if __name__ == "__main__":

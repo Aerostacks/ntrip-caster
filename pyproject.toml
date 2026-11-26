@@ -2,7 +2,10 @@
 name = "ntrip-caster"
 version = "0.1.0"
 requires-python = ">=3.13"
-dependencies = []
+dependencies = ["aero-config==0.1.0a1"]
+
+[tool.uv.sources]
+aero-config = { path = "vendor/aero_config-0.1.0a1-py3-none-any.whl" }
 
 [dependency-groups]
 dev = ["pytest>=9.0.2", "ruff>=0.15.4"]

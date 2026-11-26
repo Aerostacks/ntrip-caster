@@ -35,7 +35,7 @@ jobs:
           python-version: "3.13"
 
       - name: Install dependencies
-        run: pip install pytest==9.0.2
+        run: pip install pytest==9.0.2 vendor/*.whl
 
       - name: Run tests
         run: pytest tests/
